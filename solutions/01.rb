@@ -1,6 +1,7 @@
 class Integer
   def prime?
-    self > 1 and (2...self).none? { |i| self % i == 0}
+    return false if self < 2
+    2.upto(self - 1).none? { |divisor| remainder(divisor).zero? }
   end
 
   def factor_count(factor)
