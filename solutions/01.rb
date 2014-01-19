@@ -1,6 +1,6 @@
 class Integer
   def prime?
-    self > 1 and (2..self**0.5).map { |i| self % i }.none?(&:zero?)
+    self > 1 and (2...self).none? { |i| self % i == 0}
   end
 
   def factor_count(factor)
