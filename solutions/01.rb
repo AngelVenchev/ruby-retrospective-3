@@ -4,15 +4,10 @@ class Integer
     2.upto(self - 1).none? { |divisor| remainder(divisor).zero? }
   end
 
-  def factor_count(factor)
-    return 0 unless abs % factor == 0
-    1 + (abs / factor).factor_count(factor)
-  end
-
   def prime_factors
-    (2..abs).select(&:prime?).inject([]) do |result, i|
-      result += [i] * factor_count(i)
-    end
+    return [] if abs < 2
+    divisor = 2.upto(abs).find { |divisor| remainder(divisor).zero? }
+    [divisor] + (abs / divisor).prime_factors
   end
 
   def harmonic
