@@ -24,7 +24,7 @@ class Integer
 end
 
 class Array
-  def frequences
+  def frequencies
     each_with_object({}) do |element, hash|
       hash[element] = count element
     end
