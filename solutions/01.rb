@@ -11,11 +11,11 @@ class Integer
   end
 
   def harmonic
-    (1..self).map { |i| 1/i.to_r }.inject :+
+    1.upto(self).map { |i| Rational(1, i) }.reduce :+
   end
 
   def digits
-    abs.to_s.chars.map(&:to_i)
+    abs.to_s.chars.map &:to_i
   end
 end
 
@@ -27,7 +27,7 @@ class Array
   end
 
   def average
-    inject(:+) / count.to_f
+    reduce(:+) / count.to_f
   end
 
   def drop_every(step)
