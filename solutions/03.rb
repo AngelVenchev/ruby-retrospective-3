@@ -50,8 +50,6 @@ module Graphics
     end
 
     def <=>(other)
-      # @x == other.first.x ? @y <=> other.first.y : @x <=> other.first.x
-
       comparison = self.x <=> other.x
 
       if comparison == 0
@@ -154,10 +152,10 @@ module Graphics
 
     def points
       [
-        [@top_left,@top_right],
-        [@top_right,@bottom_right],
-        [@bottom_right,@bottom_left],
-        [@bottom_left,@top_left]
+        [@top_left,     @top_right],
+        [@top_right,    @bottom_right],
+        [@bottom_right, @bottom_left],
+        [@bottom_left,  @top_left]
       ].map { |a, b| Line.new(a,b).points }.flatten
     end
   end
