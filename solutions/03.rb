@@ -97,7 +97,8 @@ module Graphics
       end
 
       if from_x > to_x
-        from_x, to_x, from_y, to_y = to_x, from_x, to_y, from_y
+        from_x, to_x = to_x, from_x,
+        from_y, to_y = to_y, from_y
       end
 
       [Point.new(from_x, from_y), Point.new(to_x, to_y)]
