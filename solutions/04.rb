@@ -2,7 +2,7 @@ module Asm
   def self.asm(&block)
     memory = Memory.new
     memory.instance_eval(&block)
-    memory.invoke_methods(0)
+    memory.invoke_methods
     memory.table.values.take(4)
   end
 
@@ -53,14 +53,14 @@ module Asm
 
     def invoke_jump(jump_type,label_index,current_index)
       if @last_cmp.public_send(JUMPS[jump_type],0)
-        invoke_methods(label_index)
+        invoke_methods(label_index = 0)
       else
         invoke_methods(current_index + 1)
       end
     end
 
     def method_missing(name, *args)
-      if name.to_s == "label"
+      if name.to_s == 'label'.freeze
         @labels[args[0]] = @method_index
       elsif VALID_METHODS.include? name
         @method_queue[@method_index] = [name,args]
