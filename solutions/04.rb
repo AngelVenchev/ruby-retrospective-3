@@ -4,6 +4,7 @@ module Asm
     memory.instance_eval(&block)
     memory.invoke_methods
     memory.table.values.take(4)
+
   end
 
   class Memory
@@ -17,13 +18,13 @@ module Asm
 
     JUMPS =
     {
-      jmp: "+",
-      je: "==",
-      jne: "!=",
-      jl: "<",
-      jle: "<=",
-      jg: ">",
-      jge: ">="
+      jmp: :+,
+      je: :==,
+      jne: :!=,
+      jl: :<,
+      jle: :<=,
+      jg: :>,
+      jge: :>=
     }
 
     def initialize
@@ -53,7 +54,7 @@ module Asm
 
     def invoke_jump(jump_type,label_index,current_index)
       if @last_cmp.public_send(JUMPS[jump_type],0)
-        invoke_methods(label_index = 0)
+        invoke_methods(label_index)
       else
         invoke_methods(current_index + 1)
       end
@@ -61,7 +62,7 @@ module Asm
 
     def method_missing(name, *args)
       if name.to_s == 'label'.freeze
-        @labels[args[0]] = @method_index
+        @labels[args.first] = @method_index
       elsif VALID_METHODS.include? name
         @method_queue[@method_index] = [name,args]
         @method_index += 1
@@ -70,14 +71,12 @@ module Asm
       end
     end
 
-    def invoke_methods(start_index)
+    def invoke_methods(start_index = 0)
       @method_queue.keys[start_index..-1].each do |key|
         if(@method_queue[key].first.to_s.start_with? 'j')
           public_send(
-            "invoke_jump",
-            @method_queue[key][0],
-            @labels[@method_queue[key][1][0]],
-            key)
+            'invoke_jump'.freeze,@method_queue[key][0],
+            @labels[@method_queue[key][1][0]],key)
           break
         else
           public_send("invoke_" + @method_queue[key][0].to_s,*@method_queue[key][1])
