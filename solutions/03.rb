@@ -165,30 +165,51 @@ module Graphics
   module Renderers
     class Ascii
       def self.render(canvas)
-        hash = {true => '@', false => '-'}
-        canvas.render_image(hash, "\n")
+        hash = {true => '@'.freeze, false => '-'.freeze}
+        canvas.render_image(hash, '\n'.freeze)
       end
     end
 
     class Html
-      LAYOUT_HEADER = %(<!DOCTYPE html> <html> <head> <title> Rendered Canvas </title>
-        <style type="text/css"> .canvas {font-size: 1px;line-height: 1px;}
-        .canvas * {display: inline-block;width: 10px;height: 10px;border-radius: 5px;}
-        .canvas i {background-color: #eee;}
-        .canvas b {background-color: #333;}
-        </style> </head> <body> <div class="canvas">)
+
+      LAYOUT_HEADER = <<-HEADER.freeze
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Rendered Canvas</title>
+          <style type="text/css">
+            .canvas {
+              font-size: 1px;
+              line-height: 1px;
+            }
+            .canvas * {
+              display: inline-block;
+              width: 10px;
+              height: 10px;
+              border-radius: 5px;
+            }
+            .canvas i {
+              background-color: #eee;
+            }
+            .canvas b {
+              background-color: #333;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="canvas">
+      HEADER
 
       LAYOUT_FOOTER = %(</div> </body> </html>)
 
       def self.render(canvas)
-        hash = {true => "<b></b>", false => "<i></i>"}
-        self.new.add_layout canvas.render_image(hash, "<br />")
+        hash = {true => '<b></b>'.freeze, false => '<i></i>'.freeze}
+        self.new.add_layout canvas.render_image(hash, '<br/>'.freeze)
       end
 
       def add_layout(drawing)
         LAYOUT_HEADER + drawing + LAYOUT_FOOTER
       end
     end
-
   end
 end
