@@ -1,86 +1,96 @@
 module Asm
-  def self.asm(&block)
-    memory = Memory.new
-    memory.instance_eval(&block)
-    memory._methods
-    memory.table.values.take(4)
-
-  end
-
-  class Memory
-    attr_reader :table
-
-    VALID_METHODS =
-    [
-      :mov, :cmp, :inc, :dec, :label,
-      :jmp, :je, :jne, :jl, :jle, :jg, :jge
-    ]
-
-    JUMPS =
-    {
-      jmp: :+,
-      je: :==,
-      jne: :!=,
-      jl: :<,
-      jle: :<=,
-      jg: :>,
-      jge: :>=
-    }
+  class Compiler
+    attr_reader :instructions, :labels
 
     def initialize
-      @table = Hash.new { |hash,key| hash[key] = key }
-      @table.merge!({ ax: 0, bx: 0, cx: 0, dx: 0 })
-      @method_index, @method_queue = 0,{}
-      @labels = Hash.new { |hash, key| hash[key] = key if key.is_a? Fixnum}
-      @last_cmp = 0
+      @instructions = []
+      @labels = {}
     end
 
-    def _mov(destination_register, source)
-      @table[destination_register] = @table[source]
-    end
+    MUTATORS = [:mov, :inc, :dec, :cmp].freeze
+    JUMPERS = {
+      jmp: proc { true },
+      je:  proc { @last_cmp.zero? },
+      jne: proc { not @last_cmp.zero? },
+      jl:  proc { @last_cmp < 0 },
+      jle: proc { @last_cmp <= 0 },
+      jg:  proc { @last_cmp > 0 },
+      jge: proc { @last_cmp >= 0 },
+    }.freeze
 
-    def _inc(destination_register, value = 1)
-      @table[destination_register] += @table[value]
-    end
-
-    def _dec(destination_register, value = 1)
-      @table[destination_register] -= @table[value]
-    end
-
-    def _cmp(register, value)
-      @last_cmp = @table[register] <=> @table[value]
-    end
-
-    def _jump(jump_type,label_index,current_index)
-      if @last_cmp.public_send(JUMPS[jump_type],0)
-        _methods(label_index)
-      else
-        _methods(current_index + 1)
+    MUTATORS.each do |mutator_name|
+      define_method mutator_name do |*arguments|
+        @instructions << [mutator_name, *arguments]
       end
     end
 
-    def method_missing(name, *args)
-      if name.to_s == 'label'.freeze
-        @labels[args.first] = @method_index
+    JUMPERS.each do |jumper_name, condition|
+      define_method jumper_name do |position|
+        @instructions << [:jmp, condition, position]
       end
-      if VALID_METHODS.include? name
-        @method_queue[@method_index] = [name,args]
-        @method_index += 1
-      end
-      name
     end
 
-    def _methods(start_index = 0)
-      @method_queue.keys[start_index..-1].each do |key|
-        if(@method_queue[key].first.to_s.start_with? 'j')
-          public_send(
-            '_jump'.freeze,@method_queue[key][0],
-            @labels[@method_queue[key][1][0]],key)
-          break
-        else
-          public_send("_" + @method_queue[key][0].to_s,*@method_queue[key][1])
+    def label(name)
+      @labels[name] = @instructions.count
+    end
+
+    def method_missing(label_or_register_name)
+      label_or_register_name
+    end
+
+    def self.compile(&program)
+      compiler = new
+      compiler.instance_eval &program
+
+      [compiler.instructions, compiler.labels]
+    end
+  end
+
+  class Executor < Struct.new(:instructions, :labels, :ax, :bx, :cx, :dx)
+    def mov(register, value)
+      self[register] = actual_value(value)
+    end
+
+    def inc(register, value = 1)
+      self[register] += actual_value(value)
+    end
+
+    def dec(register, value = 1)
+      self[register] -= actual_value(value)
+    end
+
+    def cmp(comparant_one, comparant_two)
+      @last_cmp = actual_value(comparant_one) <=> actual_value(comparant_two)
+    end
+
+    def jmp(condition, position)
+      @current_instruction = actual_position(position).pred if instance_eval &condition
+    end
+
+    def self.execute((instructions, labels))
+      new(instructions, labels, 0, 0, 0, 0).instance_eval do
+        @current_instruction = -1
+        while instructions[@current_instruction.next] do
+          @current_instruction += 1
+          send *instructions[@current_instruction]
         end
+
+        [ax, bx, cx, dx]
       end
     end
+
+    private
+
+    def actual_value(value)
+      value.is_a?(Symbol) ? self[value] : value
+    end
+
+    def actual_position(position)
+      labels.fetch(position, position)
+    end
+  end
+
+  def self.asm(&program)
+    Executor.execute(Compiler.compile &program)
   end
 end
