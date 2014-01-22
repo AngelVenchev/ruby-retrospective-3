@@ -1,42 +1,5 @@
 module Graphics
-  class Canvas
-    attr_reader  :width, :height
-
-    def initialize(width, height)
-      @width = width
-      @height = height
-      @canvas = 1.upto(height).map { 1.upto(width).map { false } }
-    end
-
-    def set_pixel(x, y)
-      @canvas[y][x] = true
-    end
-
-    def pixel_at?(x, y)
-      @canvas[y][x]
-    end
-
-    def draw(shape)
-      shape.points.each { |point| set_pixel(point.x, point.y) }
-    end
-
-    def render_as(renderer)
-      renderer.render(self)
-    end
-
-    def render_image(pixels, delimiter)
-      @canvas.map do |pixel_row|
-        pixel_row.map do |pixel|
-          pixels[pixel]
-        end.join
-      end.join(delimiter)
-    end
-
-  end
-
   class Point
-    include Comparable
-
     attr_reader :x, :y
 
     def initialize(x, y)
@@ -44,135 +7,243 @@ module Graphics
       @y = y
     end
 
-    alias_method :eq?, :==
-    def ==(other)
-      @x == other.x and @y == other.y
+    def rasterize_on(canvas)
+      canvas.set_pixel x, y
     end
 
-    def <=>(other)
-      comparison = self.x <=> other.x
-
-      if comparison == 0
-        return self.y <=> other.y
-      else
-        return comparison
-      end
+    def eql?(other_point)
+      x == other_point.x and y == other_point.y
     end
+
+    alias == eql?
 
     def hash
-      @x.hash - @y.hash
-    end
-
-    def points
-      [self]
+      [x, y].hash
     end
   end
 
   class Line
     attr_reader :from, :to
 
-    def initialize(first_point, second_point)
-      @from, @to = [first_point,second_point].sort
+    def initialize(from, to)
+      if from.x > to.x or (from.x == to.x and from.y > to.y)
+        @from = to
+        @to   = from
+      else
+        @from = from
+        @to   = to
+      end
     end
 
-    alias_method :eq?, :==
-    def ==(other)
-      [@from, @to].sort == [other.from, other.to].sort
+    def rasterize_on(canvas)
+      BresenhamRasterization.new(from.x, from.y, to.x, to.y).rasterize_on(canvas)
     end
+
+    def eql?(other_line)
+      from == other_line.from and to == other_line.to
+    end
+
+    alias == eql?
 
     def hash
-      @from.hash + @to.hash
+      [from.hash, to.hash].hash
     end
 
-    def points
-      line_points(*bresenham_points)
-    end
-
-    private
-
-    def bresenham_points()
-      from_x, from_y, to_x, to_y = @from.x, @from.y, @to.x, @to.y
-      if steep_line?
-        from_x, from_y, to_x, to_y = from_y, from_x, to_y, to_x
+    class BresenhamRasterization
+      def initialize(from_x, from_y, to_x, to_y)
+        @from_x, @from_y = from_x, from_y
+        @to_x, @to_y     = to_x, to_y
       end
 
-      if from_x > to_x
-        from_x, to_x = to_x, from_x,
-        from_y, to_y = to_y, from_y
+      def rasterize_on(canvas)
+        initialize_from_and_to_coordinates
+        rotate_coordinates_by_ninety_degrees if steep_slope?
+        swap_from_and_to if @drawing_from_x > @drawing_to_x
+
+        draw_line_pixels_on canvas
       end
 
-      [Point.new(from_x, from_y), Point.new(to_x, to_y)]
-    end
+      def steep_slope?
+        (@to_y - @from_y).abs > (@to_x - @from_x).abs
+      end
 
-    def line_points(from_point, to_point)
-      error = (delta(from_point.x, to_point.x) / 2).to_i
-      y = from_point.y
-      ordinate_step = from_point.y < to_point.y ? 1 : -1
-      generate_points(error, y, ordinate_step, from_point, to_point)
-    end
+      def initialize_from_and_to_coordinates
+        @drawing_from_x, @drawing_from_y = @from_x, @from_y
+        @drawing_to_x, @drawing_to_y     = @to_x, @to_y
+      end
 
-    def generate_points(error, y, ordinate_step, from_point, to_point)
-      (from_point.x..to_point.x).each_with_object([]) do |x, points|
-        points << (steep_line? ? Point.new(y, x) : Point.new(x, y))
-        error -= delta(from_point.y, to_point.y)
-        if error < 0
-          y += ordinate_step
-          error += delta(from_point.x, to_point.x)
+      def rotate_coordinates_by_ninety_degrees
+        @drawing_from_x, @drawing_from_y = @drawing_from_y, @drawing_from_x
+        @drawing_to_x, @drawing_to_y     = @drawing_to_y, @drawing_to_x
+      end
+
+      def swap_from_and_to
+        @drawing_from_x, @drawing_to_x = @drawing_to_x, @drawing_from_x
+        @drawing_from_y, @drawing_to_y = @drawing_to_y, @drawing_from_y
+      end
+
+      def error_delta
+        delta_x = @drawing_to_x - @drawing_from_x
+        delta_y = (@drawing_to_y - @drawing_from_y).abs
+
+        delta_y.to_f / delta_x
+      end
+
+      def vertical_drawing_direction
+        @drawing_from_y < @drawing_to_y ? 1 : -1
+      end
+
+      def draw_line_pixels_on(canvas)
+        @error = 0.0
+        @y     = @drawing_from_y
+
+        @drawing_from_x.upto(@drawing_to_x).each do |x|
+          set_pixel_on canvas, x, @y
+          calculate_next_y_approximation
         end
       end
-    end
 
-    def steep_line?
-      (@to.y-@from.y).abs > (@to.x-@from.x).abs
-    end
+      def calculate_next_y_approximation
+        @error += error_delta
 
-    def delta(from_coordinate, to_coordinate)
-      (from_coordinate - to_coordinate).abs
+        if @error >= 0.5
+          @error -= 1.0
+          @y += vertical_drawing_direction
+        end
+      end
+
+      def set_pixel_on(canvas, x, y)
+        if steep_slope?
+          canvas.set_pixel y, x
+        else
+          canvas.set_pixel x, y
+        end
+      end
     end
   end
 
   class Rectangle
-    attr_reader :left, :right, :top_left, :top_right, :bottom_left, :bottom_right
+    attr_reader :left, :right
 
-    def initialize(first, second)
-      @left = Point.new([first.x,second.x].min,[first.y,second.y].min)
-      @right = Point.new([first.x,second.x].max,[first.y,second.y].max)
-      @top_left, @bottom_right = @left, @right
-      @bottom_left = Point.new(@left.x,@right.y)
-      @top_right = Point.new(@right.x,@left.y)
+    def initialize(left, right)
+      if left.x > right.x or (left.x == right.x and left.y > right.y)
+        @left  = right
+        @right = left
+      else
+        @left  = left
+        @right = right
+      end
     end
 
-    alias_method :eq?, :==
-    def ==(other)
-      @left == other.left and @right == other.right
+    def rasterize_on(canvas)
+      [
+        Line.new(top_left, top_right),
+        Line.new(top_right, bottom_right),
+        Line.new(bottom_right, bottom_left),
+        Line.new(bottom_left, top_left),
+      ].each { |line| line.rasterize_on canvas }
     end
+
+    def top_left
+      Point.new left.x,  [left.y, right.y].min
+    end
+
+    def top_right
+      Point.new right.x, [left.y, right.y].min
+    end
+
+    def bottom_right
+      Point.new right.x, [left.y, right.y].max
+    end
+
+    def bottom_left
+      Point.new left.x,  [left.y, right.y].max
+    end
+
+    def eql?(other)
+      top_left == other.top_left and bottom_right == other.bottom_right
+    end
+
+    alias == eql?
 
     def hash
-      @left.hash + @right.hash
+      [top_left, bottom_right].hash
+    end
+  end
+
+  class Canvas
+    attr_reader :width, :height
+
+    def initialize(width, height)
+      @width  = width
+      @height = height
+      @pixels = {}
     end
 
-    def points
-      [
-        [@top_left,     @top_right],
-        [@top_right,    @bottom_right],
-        [@bottom_right, @bottom_left],
-        [@bottom_left,  @top_left]
-      ].map { |a, b| Line.new(a,b).points }.flatten
+    def set_pixel(x, y)
+      @pixels[[x, y]] = true
+    end
+
+    def draw(shape)
+      shape.rasterize_on(self)
+    end
+
+    def render_as(renderer)
+      renderer.new(self).render
+    end
+
+    def pixel_at?(x, y)
+      @pixels[[x, y]]
     end
   end
 
   module Renderers
-    class Ascii
-      def self.render(canvas)
-        hash = {true => '@'.freeze, false => '-'.freeze}
-        canvas.render_image(hash, '\n'.freeze)
+    class Base
+      attr_reader :canvas
+
+      def initialize(canvas)
+        @canvas = canvas
+      end
+
+      def render
+        raise NotImplementedError
       end
     end
 
-    class Html
+    class Ascii < Base
+      def render
+        pixels = 0.upto(canvas.height.pred).map do |y|
+          0.upto(canvas.width.pred).map { |x| pixel_at(x, y) }
+        end
 
-      LAYOUT_HEADER = <<-HEADER.freeze
-        <!DOCTYPE html>
+        join_lines pixels.map { |line| join_pixels_in line }
+      end
+
+      private
+
+      def pixel_at(x, y)
+        canvas.pixel_at?(x, y) ? full_pixel : blank_pixel
+      end
+
+      def full_pixel
+        '@'
+      end
+
+      def blank_pixel
+        '-'
+      end
+
+      def join_pixels_in(line)
+        line.join('')
+      end
+
+      def join_lines(lines)
+        lines.join("\n")
+      end
+    end
+
+    class Html < Ascii
+      TEMPLATE = '<!DOCTYPE html>
         <html>
         <head>
           <title>Rendered Canvas</title>
@@ -197,17 +268,28 @@ module Graphics
         </head>
         <body>
           <div class="canvas">
-      HEADER
+            %s
+          </div>
+        </body>
+        </html>
+      '.freeze
 
-      LAYOUT_FOOTER = %(</div> </body> </html>)
-
-      def self.render(canvas)
-        hash = {true => '<b></b>'.freeze, false => '<i></i>'.freeze}
-        self.new.add_layout canvas.render_image(hash, '<br/>'.freeze)
+      def render
+        TEMPLATE % super
       end
 
-      def add_layout(drawing)
-        LAYOUT_HEADER + drawing + LAYOUT_FOOTER
+      private
+
+      def full_pixel
+        '<b></b>'
+      end
+
+      def blank_pixel
+        '<i></i>'
+      end
+
+      def join_lines(lines)
+        lines.join('<br>')
       end
     end
   end
